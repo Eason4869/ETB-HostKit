@@ -1,0 +1,27 @@
+# Logs
+*.log
+HostPanel.log
+UE4SS.log
+
+# Uninstall backup leftovers
+ETB-uninstall-backup/
+
+# Local paks drop-in folder (user content, not source)
+paks/
+
+# OS / editor
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+*~
+.vs/
+.vscode/
+.idea/
+
+# Python / PowerShell noise
+__pycache__/
+*.pyc
+
+# Extracted working copy (local only)
+extracted/

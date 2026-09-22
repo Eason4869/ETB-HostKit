@@ -1,0 +1,22 @@
+; ============================================================
+;  Escape The Backrooms - 多人联机（默认 12 人）网络侧参数
+;  install.ps1 会将本段写入下列文件（MaxPlayers 一行按实际设置的人数替换）：
+;    %LOCALAPPDATA%\EscapeTheBackrooms\Saved\Config\WindowsNoEditor\Game.ini
+;  GameSession.MaxPlayers 决定 listen server 接受的连接数；
+;  ClientNetSendMoveThrottleOverPlayerCount 默认为 10，超过该值后引擎将开始
+;  节流移动同步。人数较多时必须抬高该值，否则第 11 名及之后的玩家会出现
+;  明显的移动卡顿。
+; ============================================================
+
+[/Script/Engine.GameSession]
+MaxPlayers=12
+
+[/Script/Engine.GameNetworkManager]
+ClientNetSendMoveThrottleOverPlayerCount=16
+ClientNetSendMoveThrottleAtNetSpeed=20000
+
+[/Script/OnlineSubsystemUtils.IpNetDriver]
+; 每客户端下行速率上限（默认 800000 偏宽松，人数较多时适当收紧更稳定）
+MaxClientRate=250000
+MaxInternetClientRate=250000
+NetServerMaxTickRate=30
