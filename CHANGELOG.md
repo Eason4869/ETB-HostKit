@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed (2026-09-24)
+## [1.0.1] - 2026-09-24
+
+### Fixed
 
 - **人数滑块只能拉到 4**：游戏在建房界面里自己存了一份上限
   （`W_CreateServer.MaximumPlayers`，默认 4）。之前只把滑块的 `MaxValue` 抬高，
@@ -70,5 +72,6 @@ First public release of **ETB-HostKit** for *Escape the Backrooms*.
 - After a game update, re-run `一键安装.bat` (saves and config are preserved).
 - Player-count changes apply to **new** lobbies only.
 
-[Unreleased]: https://github.com/Eason4869/ETB-HostKit/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/Eason4869/ETB-HostKit/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/Eason4869/ETB-HostKit/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Eason4869/ETB-HostKit/releases/tag/v1.0.0
