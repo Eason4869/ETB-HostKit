@@ -31,6 +31,10 @@ local CONFIG = {
     enforce_gamestate_max = true,   -- 强制 Lobby_GS / MP_GameState 的 MaxPlayers
     patch_ui_slider = true,         -- 把大厅人数滑块上限抬到 max_players
     slider_default_value = 12,
+    -- 建房界面里游戏自己存的人数上限变量名（实测 W_CreateServer_C.MaximumPlayers 默认 4，
+    -- 只改滑块 MaxValue 而不抬这个变量，滑块就会被夹在 4）。
+    -- 注意别动 MaxPlayers / MaxPlayer 这类「当前选了几人」的变量，那是玩家自己选的。
+    ui_cap_properties = { "MaximumPlayers", "MaxPlayersLimit" },
     screen_notify = true,           -- 屏幕提示（已实测安全）
     assist = {
         enabled = false,
@@ -86,7 +90,7 @@ local HOOK_REGISTERED = false
 local HOOK_FIRED = false
 local assist_ticks = 0
 local assist_far_since = {}      -- 掉队计时：pawn 地址 -> 第一次被判定掉队的 tick
-local slider_done = false
+local slider_applied = {}        -- 控件地址 -> 已经同步过的人数，避免每帧抢滑块
 local selected_level = 1
 local last_event = "idle"
 local last_travel_time = 0
@@ -261,6 +265,15 @@ local function force_player_cap_param(params)
                 HOOK_FIRED = true
                 log("session param #%d already %d", CONFIG.public_connections_param, target)
             end
+            -- 顺手看一眼 PrivateConnections（第 5 个参数），排查「房间看着没满却进不来」
+            local private_param = params[CONFIG.public_connections_param + 1]
+            if private_param then
+                local ok_private, private_value = pcall(function() return private_param:get() end)
+                if ok_private and type(private_value) == "number" then
+                    log("session param #%d: PrivateConnections = %s",
+                        CONFIG.public_connections_param + 1, tostring(private_value))
+                end
+            end
             return
         end
     end
@@ -291,8 +304,36 @@ local function install_session_hook()
     return ok
 end
 
+-- 运行时读出 CreateAdvancedSession 的参数顺序，确认 PublicConnections 在第几个
+-- （游戏更新后参数位置变了，这里会自己找对，不用改代码）
+local function resolve_public_connections_index()
+    for _, path in ipairs({
+        "/Script/AdvancedSessions.CreateSessionCallbackProxyAdvanced:CreateAdvancedSession",
+        "/Script/AdvancedSessions.Default__CreateSessionCallbackProxyAdvanced:CreateAdvancedSession",
+    }) do
+        local func = StaticFindObject(path)
+        if func and func:IsValid() then
+            local index, found = 0, nil
+            pcall(function()
+                func:ForEachProperty(function(property)
+                    index = index + 1
+                    local ok_name, name = pcall(function() return property:GetFName() end)
+                    if ok_name and name then
+                        local ok_text, text = pcall(function() return name:ToString() end)
+                        if ok_text and text == "PublicConnections" then found = index end
+                    end
+                end)
+            end)
+            if found then return found end
+        end
+    end
+    return nil
+end
+
 local function enforce_max_players()
     if not CONFIG.enforce_gamestate_max then return end
+    -- 只有房主（服务器）才改这个：客户端本地去写 GameState 的同步属性只会让状态错乱
+    if not is_host() then return end
     for _, class_name in ipairs({ "Lobby_GS_C", "MP_GameState_C" }) do
         for _, state in pairs(FindAllOf(class_name) or {}) do
             if state:IsValid() then
@@ -312,6 +353,16 @@ local function patch_sliders()
     for _, class_name in ipairs({ "UI_Menu_ModeSelection_C", "W_CreateServer_C" }) do
         for _, widget in pairs(FindAllOf(class_name) or {}) do
             if widget:IsValid() then
+                -- 关键：控件自己还存着一份「人数上限」，实测 W_CreateServer_C.MaximumPlayers 默认就是 4。
+                -- 只改 Slider.MaxValue 的话，滑块会被这个变量夹住（拉不过 4，超出的部分显示成灰色）。
+                for _, property_name in ipairs(CONFIG.ui_cap_properties) do
+                    local ok_cap, cap = pcall(function() return widget[property_name] end)
+                    if ok_cap and type(cap) == "number" and cap < CONFIG.max_players then
+                        if pcall(function() widget[property_name] = CONFIG.max_players end) then
+                            log("%s.%s %s -> %d", class_name, property_name, tostring(cap), CONFIG.max_players)
+                        end
+                    end
+                end
                 local ok, slider = pcall(function() return widget.Slider_MaxPlayers end)
                 if ok and slider and slider:IsValid() then
                     local ok_max, max_value = pcall(function() return slider.MaxValue end)
@@ -320,10 +371,25 @@ local function patch_sliders()
                         pcall(function() slider.MaxValue = CONFIG.max_players end)
                         log("%s slider max -> %d", class_name, CONFIG.max_players)
                     end
-                    if not slider_done then
-                        pcall(function() slider:SetValue(CONFIG.slider_default_value) end)
-                        slider_done = true
+                    -- 每个控件实例只在「刚出现 / 面板改了目标人数」时把值同步成目标人数；
+                    -- 之后你自己拖滑块不会被抢回去。
+                    local address = widget:GetAddress()
+                    if slider_applied[address] ~= CONFIG.max_players then
+                        pcall(function() slider:SetValue(CONFIG.max_players) end)
+                        slider_applied[address] = CONFIG.max_players
+                        log("%s: 人数默认设为 %d（可在滑块上自己改）", class_name, CONFIG.max_players)
                     end
+                end
+            end
+        end
+    end
+    -- 游戏实例里也存了一份人数（建房时游戏会用它）；只抬高，不动它自己的 0
+    for _, instance in pairs(FindAllOf("BP_MyGameInstance_C") or {}) do
+        if instance:IsValid() then
+            local ok_value, value = pcall(function() return instance.MaxPlayers end)
+            if ok_value and type(value) == "number" and value > 0 and value < CONFIG.max_players then
+                if pcall(function() instance.MaxPlayers = CONFIG.max_players end) then
+                    log("BP_MyGameInstance_C.MaxPlayers %s -> %d", tostring(value), CONFIG.max_players)
                 end
             end
         end
@@ -779,6 +845,7 @@ local function cmd_players(_, parameters)
     local value = tonumber(parameters[1])
     if value and value >= 2 and value <= 32 then
         CONFIG.max_players = value
+        slider_applied = {}
         ExecuteInGameThread(function()
             enforce_max_players()
             patch_sliders()
@@ -948,7 +1015,7 @@ end
 local function set_max_players(value)
     if not value or value < 2 or value > 32 then return end
     CONFIG.max_players = value
-    slider_done = false
+    slider_applied = {}   -- 目标人数变了，下一帧把建房界面的滑块同步成新值
     enforce_max_players()
     patch_sliders()
     notify(string.format("max players = %d (applies next time you host)", value))
@@ -1126,6 +1193,12 @@ end
 
 local function boot()
     log("loading: target %d players", CONFIG.max_players)
+
+    local cap_index = resolve_public_connections_index()
+    if cap_index then
+        CONFIG.public_connections_param = cap_index
+        log("PublicConnections 在 CreateAdvancedSession 的第 %d 个参数", cap_index)
+    end
 
     if not install_session_hook() then
         for _, delay in ipairs({ 5000, 15000, 30000, 60000 }) do
