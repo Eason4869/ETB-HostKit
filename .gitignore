@@ -25,3 +25,4 @@ __pycache__/
 
 # Extracted working copy (local only)
 extracted/
+dist/

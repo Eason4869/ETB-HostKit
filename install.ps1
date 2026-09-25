@@ -57,8 +57,12 @@ function Write-TextLines([string]$Path, [string[]]$Lines) {
 }
 
 function Resolve-GameDir([string]$Hint) {
+    $expectedExe = "EscapeTheBackrooms\Binaries\Win64\Backrooms-Win64-Shipping.exe"
+    if ($Hint) {
+        if (Test-Path -LiteralPath (Join-Path $Hint $expectedExe)) { return $Hint }
+        return $null
+    }
     $candidates = New-Object System.Collections.Generic.List[string]
-    if ($Hint) { $candidates.Add($Hint) }
     $candidates.Add("D:\steam\steamapps\common\EscapeTheBackrooms")
     $candidates.Add("C:\Program Files (x86)\Steam\steamapps\common\EscapeTheBackrooms")
     $candidates.Add("C:\Program Files\Steam\steamapps\common\EscapeTheBackrooms")
@@ -79,7 +83,7 @@ function Resolve-GameDir([string]$Hint) {
     }
     foreach ($candidate in $candidates) {
         if (-not $candidate) { continue }
-        $exe = Join-Path $candidate "EscapeTheBackrooms\Binaries\Win64\Backrooms-Win64-Shipping.exe"
+        $exe = Join-Path $candidate $expectedExe
         if (Test-Path -LiteralPath $exe) { return $candidate }
     }
     return $null
@@ -157,6 +161,7 @@ function Set-IniValues([string]$IniPath, [string]$Section, $Want) {
     $lines = @(Read-TextLines $IniPath)
     $out = [System.Collections.Generic.List[string]]::new()
     $inSection = $false
+    $foundSection = $false
     $seen = @{}
     foreach ($line in $lines) {
         if ($line -match '^\s*\[') {
@@ -164,6 +169,7 @@ function Set-IniValues([string]$IniPath, [string]$Section, $Want) {
                 foreach ($key in $Want.Keys) { if (-not $seen[$key]) { $out.Add("$key = $($Want[$key])") } }
             }
             $inSection = ($line -match ('^\s*\[' + [regex]::Escape($Section) + '\]'))
+            if ($inSection) { $foundSection = $true }
             $seen = @{}
             $out.Add($line)
             continue
@@ -172,7 +178,7 @@ function Set-IniValues([string]$IniPath, [string]$Section, $Want) {
             $m = [regex]::Match($line, '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=')
             if ($m.Success -and $Want.Contains($m.Groups[1].Value)) {
                 $key = $m.Groups[1].Value
-                $out.Add("$key = $($Want[$key])")
+                if (-not $seen[$key]) { $out.Add("$key = $($Want[$key])") }
                 $seen[$key] = $true
                 continue
             }
@@ -181,6 +187,11 @@ function Set-IniValues([string]$IniPath, [string]$Section, $Want) {
     }
     if ($inSection) {
         foreach ($key in $Want.Keys) { if (-not $seen[$key]) { $out.Add("$key = $($Want[$key])") } }
+    }
+    if (-not $foundSection) {
+        $out.Add('')
+        $out.Add("[$Section]")
+        foreach ($key in $Want.Keys) { $out.Add("$key = $($Want[$key])") }
     }
     Write-TextLines $IniPath $out
 }

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-25
+
+### Fixed
+
+- 显式指定错误的 `-GameDir` 时不再回退至其他游戏目录，避免误安装或误卸载。
+- 自检报告现在计入全部缺失项，并明确提示缺失的 UE4SS 配置与 mod 清单。
+- 卸载程序在配置备份缺失时，依据已安装 mod 的实际人数上限，仅清理 `Game.ini` 中本工具写入的配置节和值；不再误删无备份 `Engine.ini` 中的同名设置。
+- 安装程序补齐缺失的 UE4SS 配置节，并移除同一配置节内的重复键。
+- 会话人数参数无法确认时不再尝试改写其他数值参数；滑块赋值失败时允许下次重试。
+
+### Added
+
+- 控制台标题与底部显示版本号；游戏内 mod 上报版本号，版本不一致时控制台会提示。
+- 控制台新增「检查更新」按钮，仅查询 GitHub 正式发布版本并打开发布页，不自动安装。
+
+### Notes
+
+- 桌面快捷方式依赖解压目录中的 `HostPanel.vbs`；安装后请勿删除该目录。
+
 ## [1.0.1] - 2026-09-24
 
 ### Fixed
@@ -72,6 +91,7 @@ First public release of **ETB-HostKit** for *Escape the Backrooms*.
 - After a game update, re-run `一键安装.bat` (saves and config are preserved).
 - Player-count changes apply to **new** lobbies only.
 
-[Unreleased]: https://github.com/Eason4869/ETB-HostKit/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/Eason4869/ETB-HostKit/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/Eason4869/ETB-HostKit/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/Eason4869/ETB-HostKit/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Eason4869/ETB-HostKit/releases/tag/v1.0.0

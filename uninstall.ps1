@@ -48,8 +48,12 @@ function Remove-Target([string]$Path, [string]$Label) {
 }
 
 function Resolve-GameDir([string]$Hint) {
+    $expectedExe = "EscapeTheBackrooms\Binaries\Win64\Backrooms-Win64-Shipping.exe"
+    if ($Hint) {
+        if (Test-Path -LiteralPath (Join-Path $Hint $expectedExe)) { return $Hint }
+        return $null
+    }
     $candidates = New-Object System.Collections.Generic.List[string]
-    if ($Hint) { $candidates.Add($Hint) }
     $candidates.Add("D:\steam\steamapps\common\EscapeTheBackrooms")
     $candidates.Add("C:\Program Files (x86)\Steam\steamapps\common\EscapeTheBackrooms")
     $candidates.Add("C:\Program Files\Steam\steamapps\common\EscapeTheBackrooms")
@@ -72,7 +76,7 @@ function Resolve-GameDir([string]$Hint) {
     foreach ($candidate in $candidates) {
         if (-not $candidate) { continue }
         # 游戏目录内还嵌套一层同名目录，可执行文件位于第二层的 Binaries\Win64 下
-        if (Test-Path -LiteralPath (Join-Path $candidate "EscapeTheBackrooms\Binaries\Win64\Backrooms-Win64-Shipping.exe")) { return $candidate }
+        if (Test-Path -LiteralPath (Join-Path $candidate $expectedExe)) { return $candidate }
     }
     return $null
 }
@@ -85,15 +89,23 @@ function Remove-ModsTxtEntry([string]$Path) {
     Write-Note "mods.txt 已清理：$Path"
 }
 
-# Game.ini / Engine.ini：优先使用安装前的备份还原；备份不存在时按键名移除本工具写入的行
-$ETB_INI_KEYS = @(
-    'MaxPlayers',
-    'ClientNetSendMoveThrottleOverPlayerCount',
-    'ClientNetSendMoveThrottleAtNetSpeed',
-    'MaxClientRate',
-    'MaxInternetClientRate',
-    'NetServerMaxTickRate'
-)
+# Game.ini / Engine.ini：优先还原安装前备份；备份缺失时仅清理本工具写入的节和值。
+
+# 在移除 mod 之前读取安装时写入 Lua 的人数。Game.ini 的备份可能被游戏更新或清理工具删除，
+# 此时需要依据实际安装值清理，而不能仅假定默认的 12 人。
+function Get-InstalledMaxPlayers($Dirs) {
+    foreach ($dir in $Dirs) {
+        $lua = Join-Path $dir 'ETB_HostKit\Scripts\main.lua'
+        if (-not (Test-Path -LiteralPath $lua)) { continue }
+        $content = [System.IO.File]::ReadAllText($lua)
+        $match = [regex]::Match($content, '(?m)^\s*max_players\s*=\s*(\d+)')
+        if ($match.Success) {
+            $value = [int]$match.Groups[1].Value
+            if ($value -ge 2 -and $value -le 32) { return $value }
+        }
+    }
+    return 12
+}
 
 function Fix-IniFile([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path)) { return }
@@ -104,27 +116,39 @@ function Fix-IniFile([string]$Path) {
         Write-Note "已还原 $(Split-Path -Leaf $Path)（安装前备份）"
         return
     }
+    # 当前安装器只写 Game.ini；没有备份的 Engine.ini 不应被猜测性清理。
+    if ((Split-Path -Leaf $Path) -ne 'Game.ini') { return }
+    $managedValues = @{
+        '[/Script/Engine.GameSession]' = @{ MaxPlayers = "$script:InstalledMaxPlayers" }
+        '[/Script/Engine.GameNetworkManager]' = @{
+            ClientNetSendMoveThrottleOverPlayerCount = '16'
+            ClientNetSendMoveThrottleAtNetSpeed = '20000'
+        }
+        '[/Script/OnlineSubsystemUtils.IpNetDriver]' = @{
+            MaxClientRate = '250000'
+            MaxInternetClientRate = '250000'
+            NetServerMaxTickRate = '30'
+        }
+    }
     $lines = @([System.IO.File]::ReadAllLines($Path))
     $changed = $false
     $out = New-Object System.Collections.Generic.List[string]
-    $seenInSection = @{}
+    $section = ''
+    $insideBlock = $false
     foreach ($line in $lines) {
         $trimmed = $line.Trim()
-        if ($trimmed -match '^\[.*\]$') { $seenInSection = @{} }      # 切换 section，键可重复出现
-        if ($trimmed -eq '; ETB-MOD BEGIN' -or $trimmed -eq '; ETB-MOD END') { $changed = $true; continue }
-        if ($trimmed.StartsWith(';') -and $trimmed -match 'ETB|Escape The Backrooms - 12') { $changed = $true; continue }
-        $key = $null
-        $m = [regex]::Match($trimmed, '^([A-Za-z_][A-Za-z0-9_]*)\s*=')
-        if ($m.Success) { $key = $m.Groups[1].Value }
-        if ($key -and ($ETB_INI_KEYS -contains $key)) {
-            if ($seenInSection[$key]) { $changed = $true; continue }   # 重复项（多次安装残留）仅保留一条
-            $seenInSection[$key] = $true
-            # MaxPlayers 由本工具写入，予以移除；其余为网络参数，同样移除本工具写入的值
-            if ($key -eq 'MaxPlayers' -and $trimmed -notmatch '^MaxPlayers\s*=\s*12$') {
-                $out.Add($line); continue
+        if ($trimmed -eq '; ETB-MOD BEGIN') { $insideBlock = $true; $changed = $true; continue }
+        if ($trimmed -eq '; ETB-MOD END') { $insideBlock = $false; $changed = $true; continue }
+        if ($insideBlock) { $changed = $true; continue }
+        if ($trimmed -match '^\[.*\]$') { $section = $trimmed }
+        $m = [regex]::Match($trimmed, '^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$')
+        if ($m.Success -and $managedValues.ContainsKey($section)) {
+            $key = $m.Groups[1].Value
+            if ($managedValues[$section].ContainsKey($key) -and
+                $m.Groups[2].Value -eq $managedValues[$section][$key]) {
+                $changed = $true
+                continue
             }
-            $changed = $true
-            continue
         }
         $out.Add($line)
     }
@@ -161,6 +185,7 @@ if (@(Get-Process -Name "Backrooms-Win64-Shipping" -ErrorAction SilentlyContinue
 $binDir  = Join-Path $GameDir "EscapeTheBackrooms\Binaries\Win64"
 $ue4ssDir = Join-Path $binDir "ue4ss"
 $modsDirs = @((Join-Path $ue4ssDir "Mods"), (Join-Path $binDir "Mods"))
+$script:InstalledMaxPlayers = Get-InstalledMaxPlayers $modsDirs
 
 Write-Step "移除 ETB_HostKit 本体"
 foreach ($modsDir in $modsDirs) {

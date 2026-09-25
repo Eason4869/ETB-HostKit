@@ -12,6 +12,7 @@ param([string]$GameDir = "")
 
 $ErrorActionPreference = "Stop"
 $script:BaseDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$script:PanelVersion = "1.0.2"
 $script:LogPath = Join-Path $script:BaseDir "HostPanel.log"
 $script:PosPath = Join-Path $script:BaseDir "HostPanel.pos"
 
@@ -89,8 +90,12 @@ $VK_F6 = 0x75
 
 # ---------------------------------------------------------------- 路径探测
 function Resolve-GameDir([string]$Hint) {
+    $expectedExe = "EscapeTheBackrooms\Binaries\Win64\Backrooms-Win64-Shipping.exe"
+    if ($Hint) {
+        if (Test-Path -LiteralPath (Join-Path $Hint $expectedExe)) { return $Hint }
+        return $null
+    }
     $candidates = New-Object System.Collections.Generic.List[string]
-    if ($Hint) { $candidates.Add($Hint) }
     $candidates.Add("D:\steam\steamapps\common\EscapeTheBackrooms")
     $candidates.Add("C:\Program Files (x86)\Steam\steamapps\common\EscapeTheBackrooms")
     $candidates.Add("C:\Program Files\Steam\steamapps\common\EscapeTheBackrooms")
@@ -110,7 +115,7 @@ function Resolve-GameDir([string]$Hint) {
         }
     }
     foreach ($candidate in $candidates) {
-        if ($candidate -and (Test-Path -LiteralPath (Join-Path $candidate "EscapeTheBackrooms\Binaries\Win64\Backrooms-Win64-Shipping.exe"))) {
+        if ($candidate -and (Test-Path -LiteralPath (Join-Path $candidate $expectedExe))) {
             return $candidate
         }
     }
@@ -335,7 +340,7 @@ function New-Caption([string]$Text, [int]$X, [int]$Y, [int]$W) {
 
 # ---------------------------------------------------------------- 窗体
 $form = New-Object ETBHotkeyForm
-$form.Text = "ETB 房主控制台   (F6 显示/隐藏)"
+$form.Text = "ETB 房主控制台 v$($script:PanelVersion)   (F6 显示/隐藏)"
 $form.ClientSize = New-Object System.Drawing.Size(430, 664)
 $form.FormBorderStyle = "FixedSingle"
 $form.MaximizeBox = $false
@@ -588,6 +593,36 @@ $logBtn = New-FlatButton "打开日志" 92 30 {
 }
 $logBtn.Location = New-Object System.Drawing.Point(200, 8)
 $toolCard.Controls.Add($logBtn)
+$script:UpdateJob = $null
+$script:UpdateButton = New-FlatButton "检查更新" 92 30 {
+    if ($script:UpdateJob) { return }
+    $script:UpdateButton.Enabled = $false
+    $script:UpdateButton.Text = "检查中…"
+    try {
+        # 只查询正式发布版本，不下载或执行来自网络的文件。
+        $script:UpdateJob = Start-Job -ScriptBlock {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            $releases = Invoke-RestMethod -Uri 'https://api.github.com/repos/Eason4869/ETB-HostKit/releases?per_page=30' -Headers @{'User-Agent'='ETB-HostKit'} -TimeoutSec 15
+            $latest = $null
+            foreach ($release in @($releases)) {
+                if ($release.draft -or $release.prerelease -or $release.tag_name -notmatch '^v?(\d+\.\d+\.\d+)$') { continue }
+                $version = [version]$Matches[1]
+                if (-not $latest -or $version -gt [version]$latest.Version) {
+                    $latest = [pscustomobject]@{Version=$version.ToString(); Tag=$release.tag_name; Url=$release.html_url}
+                }
+            }
+            if (-not $latest) { throw '仓库中尚无正式发布版本。' }
+            $latest
+        }
+    } catch {
+        $script:UpdateJob = $null
+        $script:UpdateButton.Enabled = $true
+        $script:UpdateButton.Text = "检查更新"
+        [System.Windows.Forms.MessageBox]::Show("无法开始检查更新：$($_.Exception.Message)", "ETB-HostKit") | Out-Null
+    }
+}
+$script:UpdateButton.Location = New-Object System.Drawing.Point(296, 8)
+$toolCard.Controls.Add($script:UpdateButton)
 
 # 启动游戏按钮单独占一行，显示更醒目
 $startCard = New-Card 16 532 398 56
@@ -615,13 +650,14 @@ $form.Controls.Add($tip)
 
 # 作者署名
 $author = New-Object System.Windows.Forms.Label
-$author.Text = "作者：彧晟Eason    ·    ETB 房主 mod"
+$author.Text = "ETB-HostKit v$($script:PanelVersion)  ·  作者：彧晟Eason"
 $author.Location = New-Object System.Drawing.Point(18, 638)
 $author.Size = New-Object System.Drawing.Size(398, 18)
 $author.TextAlign = "MiddleCenter"
 $author.ForeColor = [System.Drawing.Color]::FromArgb(120, 134, 150)
 $author.Font = New-Object System.Drawing.Font($FONT_NAME, 8.5)
 $form.Controls.Add($author)
+$script:VersionLabel = $author
 
 # ---------------------------------------------------------------- 功能说明（悬停提示）
 $script:ToolTip = New-Object System.Windows.Forms.ToolTip
@@ -646,6 +682,7 @@ $HELP["assist"] = "【掉队自动拉人】开启后每隔数秒检查一次：�
 $HELP["refresh"] = "立即令 mod 回写一次状态（通常每秒自动刷新）。"
 $HELP["levels"] = "将完整关卡列表输出到屏幕与 UE4SS.log，并标出当前关卡。"
 $HELP["log"] = "使用记事本打开 mod 日志 ue4ss\UE4SS.log，用于排查问题。"
+$HELP["update"] = "检查 GitHub 上的正式发布版本；确认后在浏览器打开发布页，不自动覆盖游戏文件。"
 $HELP["start"] = "通过 Steam 启动游戏。"
 
 # mod 上报的最近一次动作 → 中文提示
@@ -691,6 +728,7 @@ Set-Help $assistBtn "assist"
 Set-Help $refreshBtn "refresh"
 Set-Help $levelsBtn "levels"
 Set-Help $logBtn "log"
+Set-Help $script:UpdateButton "update"
 Set-Help $startBtn "start"
 # 下拉框不挂悬浮提示：提示气泡会覆盖展开的列表，点击选项时易误判为「点不动」
 
@@ -709,7 +747,7 @@ $helpBtn = New-FlatButton "? 说明" 92 24 {
         "  掉队自动拉人：与房主距离超过约 100 米且持续未跟随时，自动拉回房主身边（自动收队）",
         "    前往出口途中可保持开启，边走边收拢掉队玩家",
         "",
-        "【工具】刷新状态 / 关卡列表 / 打开日志 / 启动游戏",
+        "【工具】刷新状态 / 关卡列表 / 打开日志 / 检查更新 / 启动游戏",
         "",
         "所有操作均要求当前玩家为房主（服务器）。"
     ) -join "`r`n"
@@ -729,11 +767,41 @@ $script:HotkeyHint = "F6"
 $script:HotkeyNote = ""
 $script:LastAssist = $false
 $script:LastEvent = ""
+$script:ActiveModVersion = $null
 $refreshTimer = New-Object System.Windows.Forms.Timer
 $refreshTimer.Interval = 500
 $refreshTimer.Add_Tick({
+    if ($script:UpdateJob -and $script:UpdateJob.State -ne 'Running' -and $script:UpdateJob.State -ne 'NotStarted') {
+        try {
+            $latest = Receive-Job -Job $script:UpdateJob -ErrorAction Stop
+            $current = [version]$script:PanelVersion
+            if ([version]$latest.Version -gt $current) {
+                $answer = [System.Windows.Forms.MessageBox]::Show(
+                    "发现 ETB-HostKit $($latest.Tag)（当前控制台 v$($script:PanelVersion)）。`n`n是否打开 GitHub 发布页？更新前请先退出游戏。",
+                    "发现新版本", [System.Windows.Forms.MessageBoxButtons]::YesNo)
+                if ($answer -eq [System.Windows.Forms.DialogResult]::Yes) {
+                    if ($latest.Url -like 'https://github.com/Eason4869/ETB-HostKit/releases/tag/*') { Start-Process $latest.Url }
+                }
+            } else {
+                $detail = "当前控制台 v$($script:PanelVersion)；GitHub 最新正式版本为 $($latest.Tag)。"
+                if ($script:ActiveModVersion -and [version]$script:ActiveModVersion -lt $current) {
+                    $detail += "`n`n游戏内 mod 为 v$($script:ActiveModVersion)，请完全退出游戏并重新执行本版本的安装程序。"
+                }
+                [System.Windows.Forms.MessageBox]::Show($detail, "检查更新") | Out-Null
+            }
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show("检查更新失败：$($_.Exception.Message)`n`n请确认网络连接，或直接访问项目的 GitHub 发布页。", "ETB-HostKit") | Out-Null
+        } finally {
+            Remove-Job -Job $script:UpdateJob -Force
+            $script:UpdateJob = $null
+            $script:UpdateButton.Enabled = $true
+            $script:UpdateButton.Text = "检查更新"
+        }
+    }
     $state = Read-State
     if ($state.Count -eq 0) {
+        $script:ActiveModVersion = $null
+        $script:VersionLabel.Text = "ETB-HostKit v$($script:PanelVersion)  ·  作者：彧晟Eason"
         $script:HookDot.Text = "● 等待 mod"
         $script:HookDot.ForeColor = $ThemeWarn
         $script:Footer.Text = "等待 mod 状态…（请先启动游戏并进入大厅）"
@@ -742,6 +810,19 @@ $refreshTimer.Add_Tick({
     # 心跳过期表示游戏未运行（状态文件为上次遗留），此时不应沿用旧状态，
     # 否则会显示「掉队自动拉人：开」这类实际上早已复位的状态。
     $modAlive = Test-ModAlive
+    $script:ActiveModVersion = $null
+    if ($modAlive) {
+        $modVersion = "$($state['version'])"
+        if ($modVersion -match '^\d+\.\d+\.\d+$') { $script:ActiveModVersion = $modVersion }
+        if (-not $modVersion) { $modVersion = '未知' }
+        if ($modVersion -ne $script:PanelVersion) {
+            $script:VersionLabel.Text = "控制台 v$($script:PanelVersion)  ·  游戏内 mod v$modVersion（版本不一致）"
+        } else {
+            $script:VersionLabel.Text = "ETB-HostKit v$($script:PanelVersion)  ·  作者：彧晟Eason"
+        }
+    } else {
+        $script:VersionLabel.Text = "ETB-HostKit v$($script:PanelVersion)  ·  作者：彧晟Eason"
+    }
     $hookOk = $modAlive -and ("$($state['hook'])" -like "*true*")
     $script:HookDot.Text = if ($hookOk) { "● 已连接" } elseif (-not $modAlive) { "● 游戏没开" } else { "● 未连接" }
     $script:HookDot.ForeColor = if ($hookOk) { $ThemeOk } else { $ThemeWarn }
@@ -854,7 +935,7 @@ $form.Add_Shown({
         Write-PanelLog "hotkey registration failed (F6 and Ctrl+Alt+F6 both occupied)"
         $script:HotkeyNote = "全局热键均已被占用：请使用桌面「ETB 控制台」或 HostPanel.bat 重新打开"
     }
-    $form.Text = "ETB 房主控制台   [$($script:HotkeyHint) 显示 / 收起]"
+    $form.Text = "ETB 房主控制台 v$($script:PanelVersion)   [$($script:HotkeyHint) 显示 / 收起]"
     if ($script:HotkeyNote) {
         $tip.Text = $script:HotkeyNote
         $script:Footer.Text = $script:HotkeyNote
@@ -862,6 +943,10 @@ $form.Add_Shown({
 })
 
 $form.Add_FormClosing({
+    if ($script:UpdateJob) {
+        Stop-Job -Job $script:UpdateJob -ErrorAction SilentlyContinue
+        Remove-Job -Job $script:UpdateJob -Force -ErrorAction SilentlyContinue
+    }
     try { Set-Content -LiteralPath $script:PosPath -Value ("{0},{1}" -f $form.Left, $form.Top) -Encoding ASCII } catch { }
 })
 

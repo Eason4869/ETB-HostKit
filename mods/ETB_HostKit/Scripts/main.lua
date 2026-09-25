@@ -23,6 +23,7 @@
 ]]
 
 local MOD_NAME = "ETB_HostKit"
+local MOD_VERSION = "1.0.2"
 
 -- ============================ 配置区 ============================
 local CONFIG = {
@@ -277,17 +278,9 @@ local function force_player_cap_param(params)
             return
         end
     end
-    for i, candidate in ipairs(params) do
-        local ok, value = pcall(function() return candidate:get() end)
-        if ok and type(value) == "number" and value >= 2 and value <= 8 and value ~= target then
-            if pcall(function() candidate:set(target) end) then
-                HOOK_FIRED = true
-                log("fallback rewrite param #%d: %s -> %d", i, tostring(value), target)
-                return
-            end
-        end
-    end
-    log("warning: no player-cap parameter found")
+    -- 参数位置无法确认时不改写其他数值参数，以免游戏更新后误写无关字段。
+    log("warning: PublicConnections parameter #%d unavailable; session cap unchanged",
+        CONFIG.public_connections_param)
 end
 
 local function session_hook_callback(_, ...)
@@ -375,9 +368,10 @@ local function patch_sliders()
                     -- 之后你自己拖滑块不会被抢回去。
                     local address = widget:GetAddress()
                     if slider_applied[address] ~= CONFIG.max_players then
-                        pcall(function() slider:SetValue(CONFIG.max_players) end)
-                        slider_applied[address] = CONFIG.max_players
-                        log("%s: 人数默认设为 %d（可在滑块上自己改）", class_name, CONFIG.max_players)
+                        if pcall(function() slider:SetValue(CONFIG.max_players) end) then
+                            slider_applied[address] = CONFIG.max_players
+                            log("%s: 人数默认设为 %d（可在滑块上自己改）", class_name, CONFIG.max_players)
+                        end
                     end
                 end
             end
@@ -786,8 +780,8 @@ local function status()
             if ok and type(value) == "number" then max_players = tostring(value) end
         end
     end
-    notify(string.format("target %d | cap %s | players %d | host %s | hook %s | level %s",
-        CONFIG.max_players, tostring(max_players), players, tostring(is_host()),
+    notify(string.format("v%s | target %d | cap %s | players %d | host %s | hook %s | level %s",
+        MOD_VERSION, CONFIG.max_players, tostring(max_players), players, tostring(is_host()),
         tostring(HOOK_REGISTERED), tostring(current_level())))
 end
 
@@ -984,6 +978,7 @@ write_state = function()
     local players = 0
     for _ in pairs(all_pawns()) do players = players + 1 end
     local lines = {
+        "version=" .. MOD_VERSION,
         "max_players=" .. tostring(CONFIG.max_players),
         "players=" .. tostring(players),
         "level=" .. tostring(current_level()),
@@ -1192,7 +1187,7 @@ local function install_tick_hook()
 end
 
 local function boot()
-    log("loading: target %d players", CONFIG.max_players)
+    log("loading v%s: target %d players", MOD_VERSION, CONFIG.max_players)
 
     local cap_index = resolve_public_connections_index()
     if cap_index then

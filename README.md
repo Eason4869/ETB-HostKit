@@ -9,7 +9,7 @@
 
 把原版 4 人联机扩到 **12 人（最多 32 人）**，并提供全队过关、选关 / 跳关等房主向工具。
 
-**下载：** [Code → Download ZIP](https://github.com/Eason4869/ETB-HostKit/archive/refs/heads/main.zip) · **更新记录：** [CHANGELOG.md](CHANGELOG.md) · **完整手册：** [`详细说明.md`](详细说明.md)
+**下载：** [最新正式版本](https://github.com/Eason4869/ETB-HostKit/releases/latest) · **更新记录：** [CHANGELOG.md](CHANGELOG.md) · **完整手册：** [`详细说明.md`](详细说明.md)
 
 [中文](#中文) · [English](#english)
 
@@ -35,6 +35,8 @@
 3. 用桌面新增的 **「ETB 控制台」** 启动游戏（此后请一直用它启动）
 4. 进入游戏后按 **`F6`**，控制台窗口显示在游戏画面之上
 5. **建房前**点选人数；进关后用按钮或快捷键切关 / 过关
+
+安装后请保留解压目录：桌面控制台快捷方式仍指向其中的 `HostPanel.vbs`，删除该目录会使控制台无法启动。控制台内的「检查更新」仅查询 GitHub 正式发布版本并打开发布页；更新前须退出游戏，再从新版本重新安装。
 
 > **权限：** 游戏装在 `C:\Program Files` 时，右键 `一键安装.bat` →「以管理员身份运行」。  
 > **杀软：** 可能误报 `dwmapi.dll` / `UE4SS.dll`，请先把本文件夹加入白名单再安装。  
@@ -169,6 +171,8 @@ Raises the co-op cap from 4 to **12 players (up to 32)** and adds team-clear, le
 3. Launch via the new **「ETB 控制台」** desktop shortcut
 4. Press **`F6`** in-game for the host panel
 5. Pick max players **before** creating a lobby; use buttons / hotkeys in-level
+
+Keep the extracted folder after installation: the desktop shortcut launches `HostPanel.vbs` from that folder. The panel's **Check for updates** button only checks published GitHub releases and opens the release page; it does not install updates automatically.
 
 > Run as Administrator if the game lives under `C:\Program Files`.  
 > Whitelist this folder if antivirus quarantines `dwmapi.dll` / `UE4SS.dll`.  
