@@ -12,7 +12,7 @@ param([string]$GameDir = "")
 
 $ErrorActionPreference = "Stop"
 $script:BaseDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$script:PanelVersion = "1.0.2"
+$script:PanelVersion = "1.0.3"
 $script:LogPath = Join-Path $script:BaseDir "HostPanel.log"
 $script:PosPath = Join-Path $script:BaseDir "HostPanel.pos"
 
@@ -618,7 +618,7 @@ $script:UpdateButton = New-FlatButton "检查更新" 92 30 {
         $script:UpdateJob = $null
         $script:UpdateButton.Enabled = $true
         $script:UpdateButton.Text = "检查更新"
-        [System.Windows.Forms.MessageBox]::Show("无法开始检查更新：$($_.Exception.Message)", "ETB-HostKit") | Out-Null
+        [System.Windows.Forms.MessageBox]::Show($form, "无法开始检查更新：$($_.Exception.Message)", "ETB-HostKit") | Out-Null
     }
 }
 $script:UpdateButton.Location = New-Object System.Drawing.Point(296, 8)
@@ -772,11 +772,20 @@ $refreshTimer = New-Object System.Windows.Forms.Timer
 $refreshTimer.Interval = 500
 $refreshTimer.Add_Tick({
     if ($script:UpdateJob -and $script:UpdateJob.State -ne 'Running' -and $script:UpdateJob.State -ne 'NotStarted') {
+        # 模态提示框会继续处理窗口消息，因此刷新定时器仍可能重入。
+        # 弹窗前移交并清除共享任务，确保每次检查的结果只处理一次。
+        $finishedUpdateJob = $script:UpdateJob
+        $script:UpdateJob = $null
         try {
-            $latest = Receive-Job -Job $script:UpdateJob -ErrorAction Stop
+            try {
+                $latest = Receive-Job -Job $finishedUpdateJob -ErrorAction Stop
+            } finally {
+                Remove-Job -Job $finishedUpdateJob -Force -ErrorAction SilentlyContinue
+            }
             $current = [version]$script:PanelVersion
             if ([version]$latest.Version -gt $current) {
                 $answer = [System.Windows.Forms.MessageBox]::Show(
+                    $form,
                     "发现 ETB-HostKit $($latest.Tag)（当前控制台 v$($script:PanelVersion)）。`n`n是否打开 GitHub 发布页？更新前请先退出游戏。",
                     "发现新版本", [System.Windows.Forms.MessageBoxButtons]::YesNo)
                 if ($answer -eq [System.Windows.Forms.DialogResult]::Yes) {
@@ -787,13 +796,11 @@ $refreshTimer.Add_Tick({
                 if ($script:ActiveModVersion -and [version]$script:ActiveModVersion -lt $current) {
                     $detail += "`n`n游戏内 mod 为 v$($script:ActiveModVersion)，请完全退出游戏并重新执行本版本的安装程序。"
                 }
-                [System.Windows.Forms.MessageBox]::Show($detail, "检查更新") | Out-Null
+                [System.Windows.Forms.MessageBox]::Show($form, $detail, "检查更新") | Out-Null
             }
         } catch {
-            [System.Windows.Forms.MessageBox]::Show("检查更新失败：$($_.Exception.Message)`n`n请确认网络连接，或直接访问项目的 GitHub 发布页。", "ETB-HostKit") | Out-Null
+            [System.Windows.Forms.MessageBox]::Show($form, "检查更新失败：$($_.Exception.Message)`n`n请确认网络连接，或直接访问项目的 GitHub 发布页。", "ETB-HostKit") | Out-Null
         } finally {
-            Remove-Job -Job $script:UpdateJob -Force
-            $script:UpdateJob = $null
             $script:UpdateButton.Enabled = $true
             $script:UpdateButton.Text = "检查更新"
         }

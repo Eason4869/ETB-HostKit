@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-09-25
+
+### Fixed
+
+- 修复「检查更新」结果提示框循环弹出的问题：模态提示框打开期间，刷新定时器仍会触发；现在于弹窗前清除共享任务并释放后台作业，使同一次检查仅处理一次结果。
+- 更新提示框归属于控制台窗口，关闭提示框后可再次检查更新。
+
+### Tests
+
+- 新增 Windows PowerShell 5.1 定时器重入回归测试，覆盖已是当前版本、发现新版本、查询失败和再次检查；测试会在模拟弹窗期间继续处理窗口消息。
+
 ## [1.0.2] - 2026-09-25
 
 ### Fixed
@@ -91,7 +102,8 @@ First public release of **ETB-HostKit** for *Escape the Backrooms*.
 - After a game update, re-run `一键安装.bat` (saves and config are preserved).
 - Player-count changes apply to **new** lobbies only.
 
-[Unreleased]: https://github.com/Eason4869/ETB-HostKit/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/Eason4869/ETB-HostKit/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/Eason4869/ETB-HostKit/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/Eason4869/ETB-HostKit/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/Eason4869/ETB-HostKit/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Eason4869/ETB-HostKit/releases/tag/v1.0.0

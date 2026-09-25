@@ -23,7 +23,7 @@
 ]]
 
 local MOD_NAME = "ETB_HostKit"
-local MOD_VERSION = "1.0.2"
+local MOD_VERSION = "1.0.3"
 
 -- ============================ 配置区 ============================
 local CONFIG = {
